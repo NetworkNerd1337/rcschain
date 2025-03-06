@@ -1,6 +1,6 @@
 # RCS Quantum-Resistant Blockchain File Storage
 
-This project implements a multi-node, quantum-resistant blockchain-based file storage system using the Falcon-Padded-1024 signature scheme from PQClean. It features a Flask-based web interface for file and folder management, MySQL for persistent storage, and a secure peer-to-peer authentication mechanism to ensure only trusted nodes can join the network. The "RCS" stands for "Ryan's Cool Storage" - I made it, I can name it, lol!
+This project implements a multi-node, quantum-resistant blockchain-based file storage system using the Falcon-Padded-1024 signature scheme from PQClean. It features a Flask-based web interface for file and folder management, MySQL for persistent storage, and a secure peer-to-peer authentication mechanism to ensure only trusted nodes can join the network. The "RCS" stands for "Ryan's Cool Storage" - I made it, I can name it.
 
 ## Features
 - **Quantum Resistance**: Uses Falcon-Padded-1024 for post-quantum cryptographic signatures.
