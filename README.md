@@ -72,3 +72,20 @@ GRANT ALL PRIVILEGES ON blockchain_db_*.* TO 'blockchain_user'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 ```
+## Step 4: Configure the Script
+
+### 1. Copy the script to your project directory:
+```bash
+cp rcschain.py .
+```
+### 2. Edit rcschain.py to set your MySQL password:
+```bash
+DB_CONFIG = {
+    'user': 'blockchain_user',
+    'password': 'your_secure_password',  # Replace with your password
+    'host': 'localhost',
+    'database': f'blockchain_db_{NODE_ID}',
+    'raise_on_warnings': True
+}
+```
+### 3. Update the peers list in start_networking with your node IPs/ports (e.g., ("192.168.1.101", 5002)).
