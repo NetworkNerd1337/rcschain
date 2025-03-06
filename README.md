@@ -28,5 +28,9 @@ Install python packages:
 ```bash
 pip3 install flask mysql-connector-python cryptography
 ```
-## Installation
-# Step 1: Clone the Repository
+# Installation
+## Step 1: Clone the Repository
+```bash
+git clone https://github.com/yourusername/quantum-blockchain-storage.git
+cd quantum-blockchain-storage
+```
