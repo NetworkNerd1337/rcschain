@@ -106,13 +106,13 @@ python3 blockchain_storage.py
 - Open HTTP://127.0.0.1:5000 in a browser.
 - Use the UI to upload files, create folders, etc.
 
-# Multi-Node Setup
+## Multi-Node Setup
 
-## Prerequisites
+### Prerequisites
 - Multiple machines or ports on one machine.
 - Each node needs the public keys of all trusted peers.
 
-## Generate Authentication Keys
+### Generate Authentication Keys
 
 ### 1. Generate keys for each node:
 ```bash
