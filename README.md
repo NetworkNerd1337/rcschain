@@ -191,3 +191,23 @@ cat blockchain.log
 rm falcon_keys_*.bin auth_private_*.pem auth_public_*.pem
 mysql -u blockchain_user -p -e "DROP DATABASE blockchain_db_$NODE_ID;"
 ```
+
+# Security Notes
+- **Debug Mode:** debug=True is for development only. Use a WSGI server (e.g., Gunicorn) for production:
+```bash
+pip3 install gunicorn
+gunicorn -w 4 -b 0.0.0.0:5000 blockchain_storage:app
+```
+- **Key Protection:** Secure auth_private_*.pem and falcon_keys_*.bin:
+```bash
+chmod 600 auth_private_*.pem falcon_keys_*.bin
+```
+
+# Future Enhancements
+- Replace RSA with Falcon for post-quantum peer authentication in Multi-Node deployments.
+- Implement dynamic peer discovery (e.g., via a DHT).
+- Add a consensus algorithm (e.g., Raft) for decentralized operation.
+- Much more UI development
+
+# Contributing
+Pull requests are welcome! Please test changes on a multi-node setup before submitting.
