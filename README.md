@@ -89,3 +89,19 @@ DB_CONFIG = {
 }
 ```
 ### 3. Update the peers list in start_networking with your node IPs/ports (e.g., ("192.168.1.101", 5002)).
+
+# Usage
+
+## Single Node
+
+### 1. Run the script:
+```bash
+export NODE_ID="leader"
+export LEADER_IP="127.0.0.1"
+export LEADER_PORT=5001
+export LOCAL_PORT=5001
+python3 blockchain_storage.py
+```
+### 2. Access the web interface:
+- Open HTTP://127.0.0.1:5000 in a browser.
+- Use the UI to upload files, create folders, etc.
