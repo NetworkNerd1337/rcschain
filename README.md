@@ -208,6 +208,7 @@ chmod 600 auth_private_*.pem falcon_keys_*.bin
 - Implement dynamic peer discovery (e.g., via a DHT).
 - Add a consensus algorithm (e.g., Raft) for decentralized operation.
 - Much more UI development
+- Refactor into OOP, rather than one large procedural script
 
 # Contributing
 Pull requests are welcome! Please test changes on a multi-node setup before submitting.
