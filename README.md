@@ -105,3 +105,54 @@ python3 blockchain_storage.py
 ### 2. Access the web interface:
 - Open HTTP://127.0.0.1:5000 in a browser.
 - Use the UI to upload files, create folders, etc.
+
+# Multi-Node Setup
+
+## Prerequisites
+- Multiple machines or ports on one machine.
+- Each node needs the public keys of all trusted peers.
+
+## Generate Authentication Keys
+
+### 1. Generate keys for each node:
+```bash
+export NODE_ID="leader"
+python3 blockchain_storage.py  # Creates auth_private_leader.pem, auth_public_leader.pem
+export NODE_ID="node1"
+python3 blockchain_storage.py  # Creates auth_private_node1.pem, auth_public_node1.pem
+export NODE_ID="node2"
+python3 blockchain_storage.py  # Creates auth_private_node2.pem, auth_public_node2.pem
+```
+### 2. Distribute public keys:
+- Copy auth_public_leader.pem, auth_public_node1.pem, and auth_public_node2.pem to each node’s directory.
+
+## Start the Leader Node
+```bash
+export NODE_ID="leader"
+export LEADER_IP="192.168.1.100"  # Replace with leader’s IP
+export LEADER_PORT=5001
+export LOCAL_PORT=5001
+python3 blockchain_storage.py
+```
+## Start Follower Nodes
+- Node 1:
+```bash
+export NODE_ID="node1"
+export LEADER_IP="192.168.1.100"
+export LEADER_PORT=5001
+export LOCAL_PORT=5002
+python3 blockchain_storage.py
+```
+- Node 2:
+```bash
+export NODE_ID="node2"
+export LEADER_IP="192.168.1.100"
+export LEADER_PORT=5001
+export LOCAL_PORT=5003
+python3 blockchain_storage.py
+```
+
+## Verify Multi-Node Operation
+- Access any node’s UI (e.g., http://192.168.1.100:5000).
+- Upload a file or create a folder.
+- Check other nodes (e.g., http://192.168.1.101:5002) to ensure the action syncs.
