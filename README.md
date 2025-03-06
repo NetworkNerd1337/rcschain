@@ -156,3 +156,38 @@ python3 blockchain_storage.py
 - Access any node’s UI (e.g., http://192.168.1.100:5000).
 - Upload a file or create a folder.
 - Check other nodes (e.g., http://192.168.1.101:5002) to ensure the action syncs.
+
+# Peer Exchange Mechanism
+- **Trusted Peers:** The leader node maintains a list of authorized peers in self.trusted_peers. Only nodes with matching public keys can join.
+- **Adding a New Node:**
+  - Generate keys for the new node (e.g., node3):
+  ```bash
+  export NODE_ID="node3"
+  python3 blockchain_storage.py
+  ```
+  - Copy auth_public_node3.pem to all existing nodes.
+  - Update self.trusted_peers in the script on all nodes to include node3.
+  - Update self.peers in start_networking on the leader with the new node’s IP/port (e.g., ("192.168.1.103", 5004)).
+  - Start the new node:
+  ```bash
+  export NODE_ID="node3"
+  export LEADER_IP="192.168.1.100"
+  export LEADER_PORT=5001
+  export LOCAL_PORT=5004
+  python3 blockchain_storage.py
+  ```
+  - **Removing a Node:** Remove its public key from self.trusted_peers and its IP/port from self.peers on all nodes.
+
+# Troubleshooting
+
+- **Database Errors:** Ensure MySQL is running (sudo systemctl status mysql) and credentials match DB_CONFIG.
+- **Networking Issues:** Check firewall (sudo ufw allow 5000/tcp; sudo ufw allow 5001/tcp).
+- **Authentication Failures:** Verify public keys are correctly distributed and match self.trusted_peers. Check blockchain.log:
+```bash
+cat blockchain.log
+```
+- **Reset Chain:** To start fresh:
+```bash
+rm falcon_keys_*.bin auth_private_*.pem auth_public_*.pem
+mysql -u blockchain_user -p -e "DROP DATABASE blockchain_db_$NODE_ID;"
+```
