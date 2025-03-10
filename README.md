@@ -32,7 +32,7 @@ pip3 install flask mysql-connector-python cryptography
 
 ## Step 1: Clone the Repository
 ```bash
-git clone https://github.com/yourusername/quantum-blockchain-storage.git
+git clone https://github.com/NetworkNerd1332/rcschain.git
 cd quantum-blockchain-storage
 ```
 ## Step 2: Install PQClean and Compile Falcon Library
