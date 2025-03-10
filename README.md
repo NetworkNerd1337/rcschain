@@ -28,8 +28,8 @@ Install python packages:
 ```bash
 pip3 install flask mysql-connector-python cryptography
 ```
-TIP: You'll need to decide if you'll install into a virtual python environment, or install system-wide using 
-```bash --break-system-packages```. The proper way to do this would be through a virtual environment, however, for this guide we assume installation system-wide.
+TIP: You'll need to decide if you'll install into a virtual Python environment, or install system-wide using 
+```--break-system-packages```. The proper way to do this would be through a virtual environment. However, for this guide, we assume the installation is on a purpose-built system not shared with anything else so we will use system-wide dependencies.
 
 # Installation
 
