@@ -48,7 +48,7 @@ cd PQClean
 ### 2. Compile Falcon-Padded-1024 into a shared library:
 ```bash
 gcc -shared -fPIC -o libfalcon.so \
-    crypto_sign/falcon-padded-1024/*.c \
+    crypto_sign/falcon-padded-1024/clean/*.c \
     common/*.c \
     -I common -I crypto_sign/falcon-padded-1024
 ```
