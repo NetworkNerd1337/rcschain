@@ -64,7 +64,7 @@ cd ..
 ```bash
 sudo mysql_secure_installation
 ```
-TIP: This will run a script to setup MySQL in a more secure way for you. Often times, these particular settings (like allowing remote root login) are left open/mis-configured, and result in an unexpected and less-than-secure installation of MySQL. Please consider using the default answers to this script.
+TIP: This will run a script to set up MySQL more securely for you. Often, these particular settings (like allowing remote root login) are left open/misconfigured, resulting in an unexpectedly vulnerable and less-than-secure installation of MySQL. Please consider using the default answers to this script, and at least medium password complexity.
 
 ### 2. Log in to MySQL as root:
 ```bash
