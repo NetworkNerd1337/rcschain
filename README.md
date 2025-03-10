@@ -22,7 +22,7 @@ This project implements a multi-node, quantum-resistant blockchain-based file st
 Install the following system packages:
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git
+sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git net-tools
 ```
 Install python packages:
 ```bash
