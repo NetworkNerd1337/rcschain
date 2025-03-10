@@ -28,6 +28,9 @@ Install python packages:
 ```bash
 pip3 install flask mysql-connector-python cryptography
 ```
+TIP: You'll need to decide if you'll install into a virtual python environment, or install system-wide using 
+```bash --break-system-packages```. The proper way to do this would be through a virtual environment, however, for this guide we assume installation system-wide.
+
 # Installation
 
 ## Step 1: Clone the Repository
