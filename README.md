@@ -72,10 +72,10 @@ sudo mysql -u root -p
 ```
 ### 3. Create a user and database prefix:
 ```bash
-CREATE DATABASE rcschain_db;
-use rcschain_db;
+CREATE DATABASE rcschain_db_;
+USE rcschain_db_;
 CREATE USER 'blockchain_user'@'localhost' IDENTIFIED BY 'your_secure_password';
-GRANT ALL PRIVILEGES ON rcschain_db.* TO 'blockchain_user'@'localhost';
+GRANT ALL PRIVILEGES ON rcschain_db_.* TO 'blockchain_user'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 ```
@@ -91,7 +91,7 @@ DB_CONFIG = {
     'user': 'blockchain_user',
     'password': 'your_secure_password',  # Replace with your password
     'host': 'localhost',
-    'database': f'blockchain_db_{NODE_ID}',
+    'database': 'rcschain_db_{NODE_ID}',
     'raise_on_warnings': True
 }
 ```
