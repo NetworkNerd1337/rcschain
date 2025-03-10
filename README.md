@@ -35,7 +35,7 @@ TIP: You'll need to decide if you'll install into a virtual Python environment, 
 
 ## Step 1: Clone the Repository
 ```bash
-git clone https://github.com/NetworkNerd1332/rcschain.git
+git clone https://github.com/NetworkNerd1337/rcschain.git
 cd rcschain
 ```
 ## Step 2: Install PQClean and Compile Falcon Library
