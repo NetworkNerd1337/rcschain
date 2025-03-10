@@ -81,9 +81,9 @@ EXIT;
 ```
 ## Step 4: Configure the Script
 
-### 1. Copy the script to your project directory:
+### 1. Make a backup copy of the script in the project directory:
 ```bash
-cp rcschain.py .
+cp rcschain.py rcschain_original.py
 ```
 ### 2. Edit rcschain.py to set your MySQL password:
 ```bash
