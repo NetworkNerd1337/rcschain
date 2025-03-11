@@ -111,7 +111,7 @@ python3 blockchain_storage.py
 ```
 ### 2. Access the web interface:
 - Open HTTP://127.0.0.1:5000 in a browser.
-- Use the UI to upload files, create folders, etc.
+- Use the UI to upload files, create folders, download files, delete files/folders, etc.
 
 ## Multi-Node Setup
 
@@ -139,7 +139,7 @@ export NODE_ID="leader"
 export LEADER_IP="192.168.1.100"  # Replace with leader’s IP
 export LEADER_PORT=5001
 export LOCAL_PORT=5001
-python3 blockchain_storage.py
+python3 rcschain.py
 ```
 ## Start Follower Nodes
 - Node 1:
@@ -148,7 +148,7 @@ export NODE_ID="node1"
 export LEADER_IP="192.168.1.100"
 export LEADER_PORT=5001
 export LOCAL_PORT=5002
-python3 blockchain_storage.py
+python3 rcschain.py
 ```
 - Node 2:
 ```bash
@@ -156,7 +156,7 @@ export NODE_ID="node2"
 export LEADER_IP="192.168.1.100"
 export LEADER_PORT=5001
 export LOCAL_PORT=5003
-python3 blockchain_storage.py
+python3 rcschain.py
 ```
 
 ## Verify Multi-Node Operation
@@ -170,7 +170,7 @@ python3 blockchain_storage.py
   - Generate keys for the new node (e.g., node3):
   ```bash
   export NODE_ID="node3"
-  python3 blockchain_storage.py
+  python3 rcschain.py
   ```
   - Copy auth_public_node3.pem to all existing nodes.
   - Update self.trusted_peers in the script on all nodes to include node3.
@@ -181,7 +181,7 @@ python3 blockchain_storage.py
   export LEADER_IP="192.168.1.100"
   export LEADER_PORT=5001
   export LOCAL_PORT=5004
-  python3 blockchain_storage.py
+  python3 rcschain.py
   ```
   - **Removing a Node:** Remove its public key from self.trusted_peers and its IP/port from self.peers on all nodes.
 
@@ -203,7 +203,7 @@ mysql -u blockchain_user -p -e "DROP DATABASE blockchain_db_$NODE_ID;"
 - **Debug Mode:** debug=True is for development only. Use a WSGI server (e.g., Gunicorn) for production:
 ```bash
 pip3 install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 blockchain_storage:app
+gunicorn -w 4 -b 0.0.0.0:5000 rcschain:app
 ```
 - **Key Protection:** Secure auth_private_*.pem and falcon_keys_*.bin:
 ```bash
