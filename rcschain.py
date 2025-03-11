@@ -63,7 +63,7 @@ DB_CONFIG = {
     'user': 'blockchain_user',
     'password': 'your_password',  # Replace with your actual password
     'host': 'localhost',
-    'database': f'blockchain_db_{NODE_ID}',
+    'database': f'rschain_db_{NODE_ID}',
     'raise_on_warnings': True
 }
 
