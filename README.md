@@ -1,12 +1,12 @@
 # RCS Quantum-Resistant Blockchain File Storage System
 
-This project implements a multi-node, quantum-resistant blockchain-based file storage system using the Falcon-Padded-1024 signature scheme from PQClean. It features a Flask-based web interface for file and folder management, MySQL for persistent storage, and a secure peer-to-peer authentication mechanism to ensure only trusted nodes can join the network. The "RCS" stands for "Ryan's Cool Storage" - I made it, I can name it.
+This project implements a multi-node, quantum-resistant blockchain-based file storage system using the Falcon-Padded-1024 signature scheme from PQClean. It features a Flask-based web interface for file and folder management, MySQL for persistent storage, and a secure peer-to-peer authentication mechanism to ensure that only trusted nodes can join the network. The "RCS" stands for "Ryan's Cool Storage" - I made it, I can name it.
 
 ## Features
 - **Quantum Resistance**: Uses Falcon-Padded-1024 for post-quantum cryptographic signatures.
 - **Multi-Node Support**: Nodes synchronize blocks via a leader-based network, with RSA-based authentication.
-- **Web Interface**: Upload, download, create folders, move, copy, and delete files/folders via a browser.
-- **Persistence**: Stores blockchain data in MySQL, with in-memory file system reconstruction on startup.
+- **Web Interface**: Upload, download, create folders, delete files/folders (empty folders only), move, and copy files/folders via a browser.
+- **Persistence**: Stores blockchain data in MySQL with node-specific databases (e.g., ```blockchain_db_node1```), with in-memory file system reconstruction on startup.
 - **Security**: Only authorized nodes can join via pre-shared RSA public keys.
 
 ## Prerequisites
@@ -22,7 +22,7 @@ This project implements a multi-node, quantum-resistant blockchain-based file st
 Install the following system packages:
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git net-tools
+sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git net-tools network-manager
 ```
 Install python packages:
 ```bash
