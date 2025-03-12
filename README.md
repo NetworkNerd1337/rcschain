@@ -1,6 +1,6 @@
 # Ryan's Cool Storage (RCS) Blockchain
 
-This project implements a multi-node, quantum-resistant blockchain-based file storage system named **Ryan's Cool Storage (RCS)**, utilizing the Falcon-512 signature scheme from PQClean for both blockchain integrity and peer authentication. It features a Flask-based web interface with user authentication, MySQL for persistent storage, and a secure peer-to-peer network with dynamic discovery via an encrypted Distributed Hash Table (DHT).
+This project implements a multi-node, quantum-resistant blockchain-based file storage system named **Ryan's Cool Storage (RCS)**, utilizing the Falcon-512 signature scheme from PQClean for both blockchain integrity and peer authentication. It features a Flask-based web interface with comprehensive user management, MySQL for persistent storage, and a secure peer-to-peer network with dynamic discovery via an encrypted Distributed Hash Table (DHT).
 
 ## Features
 - **Quantum Resistance**: Uses Falcon-512 for post-quantum cryptographic signatures and authentication.
@@ -8,6 +8,7 @@ This project implements a multi-node, quantum-resistant blockchain-based file st
 - **Multi-Node Support**: Nodes synchronize blocks via a DHT-based network with dynamic peer discovery.
 - **Encrypted DHT**: Peer data (IP, port, public key) is encrypted with AES-GCM for privacy.
 - **User Authentication**: Requires login to access the web UI, with usernames and bcrypt-hashed passwords stored in MySQL.
+- **Full User Management**: Users can register, delete other users (except themselves), and change their passwords via the UI.
 - **Web Interface**: Authenticated users can upload, download, create folders, delete files/folders (recursively), move, and copy files/folders via a browser.
 - **Persistence**: Stores blockchain data in MySQL with node-specific databases (e.g., `rcschain_db_node1`), with in-memory file system reconstruction on startup.
 - **Security**: Only trusted nodes with the shared DHT encryption key can join and decipher peer data; UI access is restricted to authenticated users.
@@ -26,10 +27,6 @@ Install the following system packages:
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git
-```
-Install python packages:
-```bash
-pip3 install flask mysql-connector-python kademlia cryptography bcrypt
 ```
 TIP: You'll need to decide if you'll install into a virtual Python environment, or install system-wide using 
 ```--break-system-packages```. The proper way to do this would be through a virtual environment. However, for this guide, we assume the installation is on a purpose-built system not shared with anything else so we will use system-wide dependencies.
