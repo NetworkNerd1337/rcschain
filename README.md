@@ -1,13 +1,16 @@
-# RCS Quantum-Resistant Blockchain File Storage System
+# Ryan's Cool Storage (RCS) Blockchain
 
-This project implements a multi-node, quantum-resistant blockchain-based file storage system using the Falcon-Padded-1024 signature scheme from PQClean. It features a Flask-based web interface for file and folder management, MySQL for persistent storage, and a secure peer-to-peer authentication mechanism to ensure that only trusted nodes can join the network. The "RCS" stands for "Ryan's Cool Storage" - I made it, I can name it.
+This project implements a multi-node, quantum-resistant blockchain-based file storage system named **Ryan's Cool Storage (RCS)**, utilizing the Falcon-512 signature scheme from PQClean for both blockchain integrity and peer authentication. It features a Flask-based web interface with user authentication, MySQL for persistent storage, and a secure peer-to-peer network with dynamic discovery via an encrypted Distributed Hash Table (DHT).
 
 ## Features
-- **Quantum Resistance**: Uses Falcon-Padded-1024 for post-quantum cryptographic signatures.
-- **Multi-Node Support**: Nodes synchronize blocks via a leader-based network, with RSA-based authentication.
-- **Web Interface**: Upload, download, create folders, delete files/folders (empty folders only), move, and copy files/folders via a browser.
-- **Persistence**: Stores blockchain data in MySQL with node-specific databases (e.g., ```blockchain_db_node1```), with in-memory file system reconstruction on startup.
-- **Security**: Only authorized nodes can join via pre-shared RSA public keys.
+- **Quantum Resistance**: Uses Falcon-512 for post-quantum cryptographic signatures and authentication.
+- **Optimized Signatures**: Falcon-512 signatures (~666 bytes) are compressed with zlib (~400-500 bytes) for network efficiency.
+- **Multi-Node Support**: Nodes synchronize blocks via a DHT-based network with dynamic peer discovery.
+- **Encrypted DHT**: Peer data (IP, port, public key) is encrypted with AES-GCM for privacy.
+- **User Authentication**: Requires login to access the web UI, with usernames and bcrypt-hashed passwords stored in MySQL.
+- **Web Interface**: Authenticated users can upload, download, create folders, delete files/folders (recursively), move, and copy files/folders via a browser.
+- **Persistence**: Stores blockchain data in MySQL with node-specific databases (e.g., `rcschain_db_node1`), with in-memory file system reconstruction on startup.
+- **Security**: Only trusted nodes with the shared DHT encryption key can join and decipher peer data; UI access is restricted to authenticated users.
 
 ## Prerequisites
 - **Operating System**: Ubuntu 20.04+ or another Debian-based distribution.
@@ -22,11 +25,11 @@ This project implements a multi-node, quantum-resistant blockchain-based file st
 Install the following system packages:
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git net-tools network-manager
+sudo apt install -y python3 python3-pip python3-dev mysql-server mysql-client libmysqlclient-dev build-essential libssl-dev git
 ```
 Install python packages:
 ```bash
-pip3 install flask mysql-connector-python cryptography
+pip3 install flask mysql-connector-python kademlia cryptography bcrypt
 ```
 TIP: You'll need to decide if you'll install into a virtual Python environment, or install system-wide using 
 ```--break-system-packages```. The proper way to do this would be through a virtual environment. However, for this guide, we assume the installation is on a purpose-built system not shared with anything else so we will use system-wide dependencies.
@@ -45,12 +48,12 @@ cd rcschain
 git clone https://github.com/PQClean/PQClean.git
 cd PQClean
 ```
-### 2. Compile Falcon-Padded-1024 into a shared library:
+### 2. Compile Falcon-512 into a shared library:
 ```bash
 gcc -shared -fPIC -o libfalcon.so \
-    crypto_sign/falcon-padded-1024/clean/*.c \
+    crypto_sign/falcon-512/clean/*.c \
     common/*.c \
-    -I common -I crypto_sign/falcon-padded-1024
+    -I common -I crypto_sign/falcon-512
 ```
 ### 3. Move the library to a system path:
 ```bash
@@ -72,150 +75,115 @@ sudo mysql -u root -p
 ```
 ### 3. Create a user and database prefix:
 ```bash
-CREATE DATABASE rcschain_db_;
-USE rcschain_db_;
 CREATE USER 'blockchain_user'@'localhost' IDENTIFIED BY 'your_secure_password';
 GRANT ALL PRIVILEGES ON rcschain_db_.* TO 'blockchain_user'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 ```
+TIP: The script uses databases like rcschain_db_leader, rcschain_db_node1, etc., based on the NODE_ID. The wildcard (rcschain_db_*) ensures access to all such databases.
+
 ## Step 4: Configure the Script
 
 ### 1. Make a backup copy of the script in the project directory:
 ```bash
 cp rcschain.py rcschain_original.py
 ```
-### 2. Edit rcschain.py to set your MySQL password:
+### 2. Edit rcschain.py to set your MySQL password and (optionally) DHT encryption key:
 ```bash
 DB_CONFIG = {
     'user': 'blockchain_user',
     'password': 'your_secure_password',  # Replace with your password
     'host': 'localhost',
-    'database': 'rcschain_db_{NODE_ID}',
+    'database': f'rcschain_db_{NODE_ID}',
     'raise_on_warnings': True
 }
+DHT_ENCRYPTION_KEY = b'SecretKeyForRCSChain1234567890AB'  # Replace with a secure 32-byte key
 ```
-### 3. Update the peers list in start_networking with your node IPs/ports (e.g., ("192.168.1.101", 5002)).
+TIP: The default DHT Key key is for demonstration. Replace it with a unique, secure 32-byte key shared among trusted nodes.
 
 # Usage
 
-## Single Node
+## Single Node (Bootstrap Node)
 
-### 1. Run the script:
+### 1. Run the script as the bootstrap node (e.g., leader):
 ```bash
 export NODE_ID="leader"
-export LEADER_IP="127.0.0.1"
-export LEADER_PORT=5001
-export LOCAL_PORT=5001
-python3 blockchain_storage.py
+export BOOTSTRAP_IP="192.168.1.100"  # Replace with this node’s IP
+export BOOTSTRAP_PORT=8468
+export LOCAL_DHT_PORT=8468
+python3 rcschain.py
 ```
 ### 2. Access the web interface:
-- Open HTTP://127.0.0.1:5000 in a browser.
-- Use the UI to upload files, create folders, download files, delete files/folders, etc.
+- Open http://192.168.1.100:5000 in a browser.
+- Log in with default credentials: ```admin:password```.
+- Use the UI to upload files, create folders, download files, delete files/folders recursively, etc.
+- Log out via the link in the UI.
 
 ## Multi-Node Setup
 
 ### Prerequisites
 - Multiple machines or ports on one machine.
-- Each node needs the public keys of all trusted peers.
+- A bootstrap node (e.g., the leader) must be running first.
+- All nodes must share the same DHT_ENCRYPTION_KEY.
 
-### Generate Authentication Keys
+### Start the Bootstrap Node
+- See "Single Node" above.
 
-### 1. Generate keys for each node:
-```bash
-export NODE_ID="leader"
-python3 blockchain_storage.py  # Creates auth_private_leader.pem, auth_public_leader.pem
-export NODE_ID="node1"
-python3 blockchain_storage.py  # Creates auth_private_node1.pem, auth_public_node1.pem
-export NODE_ID="node2"
-python3 blockchain_storage.py  # Creates auth_private_node2.pem, auth_public_node2.pem
-```
-### 2. Distribute public keys:
-- Copy auth_public_leader.pem, auth_public_node1.pem, and auth_public_node2.pem to each node’s directory.
-
-## Start the Leader Node
-```bash
-export NODE_ID="leader"
-export LEADER_IP="192.168.1.100"  # Replace with leader’s IP
-export LEADER_PORT=5001
-export LOCAL_PORT=5001
-python3 rcschain.py
-```
-## Start Follower Nodes
+### Start Follower Nodes
 - Node 1:
 ```bash
 export NODE_ID="node1"
-export LEADER_IP="192.168.1.100"
-export LEADER_PORT=5001
-export LOCAL_PORT=5002
+export BOOTSTRAP_IP="192.168.1.100"  # Leader’s IP
+export BOOTSTRAP_PORT=8468
+export LOCAL_DHT_PORT=8469
 python3 rcschain.py
 ```
 - Node 2:
 ```bash
 export NODE_ID="node2"
-export LEADER_IP="192.168.1.100"
-export LEADER_PORT=5001
-export LOCAL_PORT=5003
+export BOOTSTRAP_IP="192.168.1.100"
+export BOOTSTRAP_PORT=8468
+export LOCAL_DHT_PORT=8470
 python3 rcschain.py
 ```
-
 ## Verify Multi-Node Operation
 - Access any node’s UI (e.g., http://192.168.1.100:5000).
-- Upload a file or create a folder.
-- Check other nodes (e.g., http://192.168.1.101:5002) to ensure the action syncs.
+- Log in with admin:password.
+- Upload a file, create a folder with subcontents, or delete a folder recursively.
+- Check other nodes (e.g., http://<node1-ip>:5000) after logging in to ensure actions sync.
+
+## Managing Users
+
+- Default User: admin:password is created on first run.
+- Add Users:
+```bash
+mysql -u blockchain_user -p rcschain_db_<NODE_ID>
+```
+```sql
+INSERT INTO users (username, password_hash)
+VALUES ('newuser', '$2b$12$...'); -- Replace with bcrypt hash
+```
+Generate a hash with Python:
+```bash
+import bcrypt
+password = "your_password".encode('utf-8')
+hashed = bcrypt.hashpw(password, bcrypt.gensalt())
+print(hashed.decode('utf-8'))
+```
 
 # Peer Exchange Mechanism
-- **Trusted Peers:** The leader node maintains a list of authorized peers in self.trusted_peers. Only nodes with matching public keys can join.
-- **Adding a New Node:**
-  - Generate keys for the new node (e.g., node3):
-  ```bash
-  export NODE_ID="node3"
-  python3 rcschain.py
-  ```
-  - Copy auth_public_node3.pem to all existing nodes.
-  - Update self.trusted_peers in the script on all nodes to include node3.
-  - Update self.peers in start_networking on the leader with the new node’s IP/port (e.g., ("192.168.1.103", 5004)).
-  - Start the new node:
-  ```bash
-  export NODE_ID="node3"
-  export LEADER_IP="192.168.1.100"
-  export LEADER_PORT=5001
-  export LOCAL_PORT=5004
-  python3 rcschain.py
-  ```
-  - **Removing a Node:** Remove its public key from self.trusted_peers and its IP/port from self.peers on all nodes.
-
-# Troubleshooting
-
-- **Database Errors:** Ensure MySQL is running (sudo systemctl status mysql) and credentials match DB_CONFIG.
-- **Networking Issues:** Check firewall (sudo ufw allow 5000/tcp; sudo ufw allow 5001/tcp).
-- **Authentication Failures:** Verify public keys are correctly distributed and match self.trusted_peers. Check blockchain.log:
-```bash
-cat blockchain.log
-```
-- **Reset Chain:** To start fresh:
-```bash
-rm falcon_keys_*.bin auth_private_*.pem auth_public_*.pem
-mysql -u blockchain_user -p -e "DROP DATABASE blockchain_db_$NODE_ID;"
-```
-
-# Security Notes
-- **Debug Mode:** debug=True is for development only. Use a WSGI server (e.g., Gunicorn) for production:
-```bash
-pip3 install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 rcschain:app
-```
-- **Key Protection:** Secure auth_private_*.pem and falcon_keys_*.bin:
-```bash
-chmod 600 auth_private_*.pem falcon_keys_*.bin
-```
-
-# Future Enhancements
-- Replace RSA with Falcon for post-quantum peer authentication in Multi-Node deployments.
-- Implement dynamic peer discovery (e.g., via a DHT).
-- Add a consensus algorithm (e.g., Raft) for decentralized operation.
-- Much more UI development
-- Refactor into OOP, rather than one large procedural script
-
-# Contributing
-Pull requests are welcome! Please test changes on a multi-node setup before submitting.
+- Dynamic Discovery: Nodes use a Kademlia DHT for peer discovery. The bootstrap node (e.g., leader) initializes the DHT network.
+- Encrypted DHT: Peer data (IP, port, Falcon public key) is encrypted with AES-GCM using a shared key, ensuring privacy.
+- Authentication: Nodes verify messages with Falcon-512 signatures.
+- Adding a New Node:
+	- Ensure the new node has the same DHT_ENCRYPTION_KEY as existing nodes.
+	- Start the new node with a unique NODE_ID and connect to the bootstrap node:
+	```bash
+	export NODE_ID="node3"
+	export BOOTSTRAP_IP="192.168.1.100"
+	export BOOTSTRAP_PORT=8468
+	export LOCAL_DHT_PORT=8471
+	python3 rcschain.py
+	```
+	- The node auto-registers in the DHT; existing nodes discover it within 60 seconds if they have the key.
+- Removing a Node: Stop the node. It will no longer respond to DHT queries, and peers will eventually timeout.
