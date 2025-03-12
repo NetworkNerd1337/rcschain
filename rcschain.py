@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, send_file, jsonify, session, redirect, url_for
 import os
 from datetime import datetime
 import base64
@@ -6,135 +6,69 @@ import mysql.connector
 import json
 import io
 import ctypes
-import socket
-import threading
-import queue
+import asyncio
 import logging
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.backends import default_backend
+import zlib
+from kademlia.network import Server
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import bcrypt
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)  # Secret key for session management
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, filename='blockchain.log', 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Load the Falcon shared library for blockchain signatures
+# Load the Falcon shared library
 falcon_lib = ctypes.CDLL("/usr/local/lib/libfalcon.so")
 
-# Define Falcon function signatures
-falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign_keypair.argtypes = [
+# Define Falcon-512 function signatures
+falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_keypair.argtypes = [
     ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte)
 ]
-falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign_keypair.restype = ctypes.c_int
+falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_keypair.restype = ctypes.c_int
 
-falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign.argtypes = [
+falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign.argtypes = [
     ctypes.POINTER(ctypes.c_ubyte),
     ctypes.POINTER(ctypes.c_size_t),
     ctypes.c_void_p,
     ctypes.c_size_t,
     ctypes.POINTER(ctypes.c_ubyte)
 ]
-falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign.restype = ctypes.c_int
+falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign.restype = ctypes.c_int
 
-falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign_open.argtypes = [
+falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_open.argtypes = [
     ctypes.POINTER(ctypes.c_ubyte),
     ctypes.POINTER(ctypes.c_size_t),
     ctypes.c_void_p,
     ctypes.c_size_t,
     ctypes.POINTER(ctypes.c_ubyte)
 ]
-falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign_open.restype = ctypes.c_int
+falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_open.restype = ctypes.c_int
 
-# Constants
-CRYPTO_PUBLICKEYBYTES = 1793
-CRYPTO_SECRETKEYBYTES = 2305
-CRYPTO_BYTES = 1330
+# Constants for Falcon-512
+CRYPTO_PUBLICKEYBYTES = 897   # Falcon-512 public key size
+CRYPTO_SECRETKEYBYTES = 1281  # Falcon-512 secret key size
+CRYPTO_BYTES = 666            # Falcon-512 signature size (average)
 
 # Node configuration
 NODE_ID = os.getenv("NODE_ID", "node1")
-LEADER_IP = os.getenv("LEADER_IP", "127.0.0.1")
-LEADER_PORT = int(os.getenv("LEADER_PORT", 5001))
-LOCAL_PORT = int(os.getenv("LOCAL_PORT", 5001))
+BOOTSTRAP_IP = os.getenv("BOOTSTRAP_IP", "127.0.0.1")
+BOOTSTRAP_PORT = int(os.getenv("BOOTSTRAP_PORT", 8468))
+LOCAL_DHT_PORT = int(os.getenv("LOCAL_DHT_PORT", 8468))
 
 # MySQL database configuration
 DB_CONFIG = {
     'user': 'blockchain_user',
     'password': 'your_password',  # Replace with your actual password
     'host': 'localhost',
-    'database': f'rschain_db_{NODE_ID}',
+    'database': f'rcschain_db_{NODE_ID}',
     'raise_on_warnings': True
 }
 
-# Queue for incoming blocks
-block_queue = queue.Queue()
-
-# Authentication keys
-def generate_auth_keys(node_id):
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
-    public_key = private_key.public_key()
-    
-    with open(f"auth_private_{node_id}.pem", "wb") as f:
-        f.write(private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
-        ))
-    with open(f"auth_public_{node_id}.pem", "wb") as f:
-        f.write(public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        ))
-    return private_key, public_key
-
-def load_auth_keys(node_id):
-    try:
-        with open(f"auth_private_{node_id}.pem", "rb") as f:
-            private_key = serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
-        with open(f"auth_public_{node_id}.pem", "rb") as f:
-            public_key = serialization.load_pem_public_key(f.read(), backend=default_backend())
-        return private_key, public_key
-    except FileNotFoundError:
-        return generate_auth_keys(node_id)
-
-# Database setup
-def init_db():
-    conn = mysql.connector.connect(**DB_CONFIG)
-    c = conn.cursor()
-    
-    try:
-        c.execute('''CREATE TABLE IF NOT EXISTS blocks (
-                     `index` INT PRIMARY KEY,
-                     previous_hash TEXT NOT NULL,
-                     timestamp TEXT NOT NULL,
-                     data TEXT NOT NULL,
-                     signature TEXT NOT NULL
-                     )''')
-    except mysql.connector.Error as e:
-        if e.errno != 1050:
-            raise
-    
-    try:
-        c.execute('CREATE INDEX idx_signature ON blocks (signature(255))')
-    except mysql.connector.Error as e:
-        if e.errno != 1061:
-            raise
-    
-    try:
-        c.execute('CREATE INDEX idx_timestamp ON blocks (timestamp(255))')
-    except mysql.connector.Error as e:
-        if e.errno != 1061:
-            raise
-    
-    try:
-        c.execute('CREATE INDEX idx_prev_hash ON blocks (previous_hash(255))')
-    except mysql.connector.Error as e:
-        if e.errno != 1061:
-            raise
-    
-    conn.commit()
-    conn.close()
+# Pre-shared AES key for DHT encryption (32 bytes for AES-256)
+DHT_ENCRYPTION_KEY = b'SecretKeyForRCSChain1234567890AB'
 
 class Block:
     def __init__(self, index, previous_hash, timestamp, data, signature):
@@ -147,8 +81,11 @@ class Block:
 class PrivateBlockchain:
     def __init__(self):
         self.node_id = NODE_ID
-        # Load or generate Falcon keys for blockchain
+        self.local_ip = self.get_local_ip()
+        
+        # Load or generate Falcon keys for blockchain and authentication
         key_file = f"falcon_keys_{self.node_id}.bin"
+        auth_key_file = f"falcon_auth_keys_{self.node_id}.bin"
         if os.path.exists(key_file):
             with open(key_file, "rb") as f:
                 pk_data = f.read(CRYPTO_PUBLICKEYBYTES)
@@ -158,29 +95,142 @@ class PrivateBlockchain:
         else:
             self.pk = (ctypes.c_ubyte * CRYPTO_PUBLICKEYBYTES)()
             self.sk = (ctypes.c_ubyte * CRYPTO_SECRETKEYBYTES)()
-            if falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign_keypair(self.pk, self.sk) != 0:
+            if falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_keypair(self.pk, self.sk) != 0:
                 raise RuntimeError("Failed to generate Falcon key pair")
             with open(key_file, "wb") as f:
                 f.write(bytes(self.pk))
                 f.write(bytes(self.sk))
         
-        # Load or generate RSA keys for authentication
-        self.auth_private_key, self.auth_public_key = load_auth_keys(self.node_id)
+        if os.path.exists(auth_key_file):
+            with open(auth_key_file, "rb") as f:
+                auth_pk_data = f.read(CRYPTO_PUBLICKEYBYTES)
+                auth_sk_data = f.read(CRYPTO_SECRETKEYBYTES)
+            self.auth_pk = (ctypes.c_ubyte * CRYPTO_PUBLICKEYBYTES).from_buffer_copy(auth_pk_data)
+            self.auth_sk = (ctypes.c_ubyte * CRYPTO_SECRETKEYBYTES).from_buffer_copy(auth_sk_data)
+        else:
+            self.auth_pk = (ctypes.c_ubyte * CRYPTO_PUBLICKEYBYTES)()
+            self.auth_sk = (ctypes.c_ubyte * CRYPTO_SECRETKEYBYTES)()
+            if falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_keypair(self.auth_pk, self.auth_sk) != 0:
+                raise RuntimeError("Failed to generate Falcon auth key pair")
+            with open(auth_key_file, "wb") as f:
+                f.write(bytes(self.auth_pk))
+                f.write(bytes(self.sk))
         
-        # Trusted peers (public keys of authorized nodes)
         self.trusted_peers = {}
-        for peer_id in ["leader", "node1", "node2"]:  # Add your node IDs
-            with open(f"auth_public_{peer_id}.pem", "rb") as f:
-                self.trusted_peers[peer_id] = serialization.load_pem_public_key(f.read(), backend=default_backend())
-        
         self.file_system = {}
         self.init_storage()
-        self.start_networking()
+        self.dht_server = Server()
+        asyncio.run(self.start_dht())
         if not self.load_chain():
             self.create_genesis_block()
 
+    def get_local_ip(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = '127.0.0.1'
+        finally:
+            s.close()
+        return ip
+
     def init_storage(self):
-        init_db()
+        conn = mysql.connector.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Create blocks table
+        try:
+            c.execute('''CREATE TABLE IF NOT EXISTS blocks (
+                         `index` INT PRIMARY KEY,
+                         previous_hash TEXT NOT NULL,
+                         timestamp TEXT NOT NULL,
+                         data TEXT NOT NULL,
+                         signature TEXT NOT NULL
+                         )''')
+        except mysql.connector.Error as e:
+            if e.errno != 1050:
+                raise
+        
+        # Create users table
+        try:
+            c.execute('''CREATE TABLE IF NOT EXISTS users (
+                         id INT AUTO_INCREMENT PRIMARY KEY,
+                         username VARCHAR(255) UNIQUE NOT NULL,
+                         password_hash BLOB NOT NULL
+                         )''')
+        except mysql.connector.Error as e:
+            if e.errno != 1050:
+                raise
+        
+        # Add default user (admin:password) if not exists
+        default_user = 'admin'
+        default_password = 'password'
+        password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt())
+        c.execute('INSERT IGNORE INTO users (username, password_hash) VALUES (%s, %s)',
+                 (default_user, password_hash))
+        
+        # Create indexes for blocks table
+        for index_name, column in [
+            ('idx_signature', 'signature(255)'),
+            ('idx_timestamp', 'timestamp(255)'),
+            ('idx_prev_hash', 'previous_hash(255)')
+        ]:
+            try:
+                c.execute(f'CREATE INDEX {index_name} ON blocks ({column})')
+            except mysql.connector.Error as e:
+                if e.errno != 1061:
+                    raise
+        
+        conn.commit()
+        conn.close()
+
+    def encrypt_dht_data(self, data):
+        aesgcm = AESGCM(DHT_ENCRYPTION_KEY)
+        nonce = os.urandom(12)
+        plaintext = json.dumps(data).encode('utf-8')
+        ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+        return base64.b64encode(nonce + ciphertext).decode('utf-8')
+
+    def decrypt_dht_data(self, encrypted_data):
+        aesgcm = AESGCM(DHT_ENCRYPTION_KEY)
+        try:
+            encrypted_bytes = base64.b64decode(encrypted_data)
+            nonce = encrypted_bytes[:12]
+            ciphertext = encrypted_bytes[12:]
+            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+            return json.loads(plaintext.decode('utf-8'))
+        except Exception as e:
+            logging.error(f"Failed to decrypt DHT data: {e}")
+            return None
+
+    async def start_dht(self):
+        await self.dht_server.listen(LOCAL_DHT_PORT)
+        if self.node_id != "leader":
+            await self.dht_server.bootstrap([(BOOTSTRAP_IP, BOOTSTRAP_PORT)])
+        node_data = {
+            "ip": self.local_ip,
+            "port": 5001,
+            "pubkey": base64.b64encode(bytes(self.auth_pk)).decode('utf-8')
+        }
+        encrypted_data = self.encrypt_dht_data(node_data)
+        await self.dht_server.set(f"node_{self.node_id}", encrypted_data)
+        asyncio.create_task(self.discover_peers())
+
+    async def discover_peers(self):
+        while True:
+            for peer_id in ["leader", "node1", "node2"]:  # Adjust as needed
+                if peer_id != self.node_id:
+                    encrypted_data = await self.dht_server.get(f"node_{peer_id}")
+                    if encrypted_data:
+                        peer_info = self.decrypt_dht_data(encrypted_data)
+                        if peer_info:
+                            self.trusted_peers[peer_id] = {
+                                "ip": peer_info["ip"],
+                                "port": peer_info["port"],
+                                "pubkey": (ctypes.c_ubyte * CRYPTO_PUBLICKEYBYTES).from_buffer_copy(base64.b64decode(peer_info["pubkey"]))
+                            }
+            await asyncio.sleep(60)
 
     def sign_block(self, index, previous_hash, timestamp, data):
         message = str(index) + previous_hash + timestamp + str(data)
@@ -190,20 +240,20 @@ class PrivateBlockchain:
         sm = (ctypes.c_ubyte * (CRYPTO_BYTES + msg_len))()
         smlen = ctypes.c_size_t(0)
         
-        falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign(
+        falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign(
             sm, ctypes.byref(smlen), 
             msg_bytes, msg_len, 
             self.sk
         )
         signature = bytes(sm[:CRYPTO_BYTES])
-        return base64.b64encode(signature).decode('utf-8')
+        return base64.b64encode(zlib.compress(signature)).decode('utf-8')
 
     def verify_block(self, index, previous_hash, timestamp, data, signature):
         message = str(index) + previous_hash + timestamp + str(data)
         msg_bytes = message.encode('utf-8')
         msg_len = ctypes.c_size_t(len(msg_bytes))
         
-        signature_bytes = base64.b64decode(signature)
+        signature_bytes = zlib.decompress(base64.b64decode(signature))
         sm = (ctypes.c_ubyte * (CRYPTO_BYTES + len(msg_bytes)))()
         for i, byte in enumerate(signature_bytes + msg_bytes):
             sm[i] = byte
@@ -212,10 +262,44 @@ class PrivateBlockchain:
         m = (ctypes.c_ubyte * len(msg_bytes))()
         mlen = ctypes.c_size_t(0)
         
-        result = falcon_lib.PQCLEAN_FALCONPADDED1024_CLEAN_crypto_sign_open(
+        result = falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_open(
             m, ctypes.byref(mlen), 
             sm, smlen, 
             self.pk
+        )
+        return result == 0 and bytes(m[:mlen.value]) == msg_bytes
+
+    def sign_message(self, message):
+        msg_bytes = message.encode('utf-8')
+        msg_len = len(msg_bytes)
+        sm = (ctypes.c_ubyte * (CRYPTO_BYTES + msg_len))()
+        smlen = ctypes.c_size_t(0)
+        
+        falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign(
+            sm, ctypes.byref(smlen), 
+            msg_bytes, msg_len, 
+            self.auth_sk
+        )
+        signature = bytes(sm[:CRYPTO_BYTES])
+        return base64.b64encode(zlib.compress(signature)).decode('utf-8')
+
+    def verify_message(self, message, signature, peer_id):
+        if peer_id not in self.trusted_peers:
+            return False
+        msg_bytes = message.encode('utf-8')
+        msg_len = ctypes.c_size_t(len(msg_bytes))
+        signature_bytes = zlib.decompress(base64.b64decode(signature))
+        sm = (ctypes.c_ubyte * (CRYPTO_BYTES + len(msg_bytes)))()
+        for i, byte in enumerate(signature_bytes + msg_bytes):
+            sm[i] = byte
+        smlen = ctypes.c_size_t(len(signature_bytes) + len(msg_bytes))
+        m = (ctypes.c_ubyte * len(msg_bytes))()
+        mlen = ctypes.c_size_t(0)
+        
+        result = falcon_lib.PQCLEAN_FALCON512_CLEAN_crypto_sign_open(
+            m, ctypes.byref(mlen), 
+            sm, smlen, 
+            self.trusted_peers[peer_id]["pubkey"]
         )
         return result == 0 and bytes(m[:mlen.value]) == msg_bytes
 
@@ -232,7 +316,7 @@ class PrivateBlockchain:
         conn.close()
         
         self.file_system = genesis_data
-        self.broadcast_block(0, "0", timestamp, genesis_data, signature)
+        asyncio.run(self.broadcast_block(0, "0", timestamp, genesis_data, signature))
 
     def load_chain(self):
         conn = mysql.connector.connect(**DB_CONFIG)
@@ -243,7 +327,7 @@ class PrivateBlockchain:
 
         if not blocks:
             if self.node_id != "leader":
-                self.sync_from_leader()
+                asyncio.run(self.sync_from_leader())
             return False
 
         self.file_system = {"root": {"type": "directory", "contents": {}}}
@@ -268,11 +352,12 @@ class PrivateBlockchain:
             current[target] = {"type": "directory", "contents": {}}
         elif operation == "upload_file":
             current[target] = {"type": "file", "content": data["content"]}
-        elif operation in ["delete_file", "delete_folder"]:
-            if target in current:
-                if (operation == "delete_file" and current[target]["type"] == "file") or \
-                   (operation == "delete_folder" and current[target]["type"] == "directory" and not current[target]["contents"]):
-                    del current[target]
+        elif operation == "delete_file":
+            if target in current and current[target]["type"] == "file":
+                del current[target]
+        elif operation == "delete_folder":
+            if target in current and current[target]["type"] == "directory":
+                del current[target]
         elif operation == "move" or operation == "copy":
             source_path = data["source"]
             src_current, src_target = get_path_dict(source_path)
@@ -282,28 +367,7 @@ class PrivateBlockchain:
                     del src_current[src_target]
                 current[target] = item.copy()
 
-    def sign_message(self, message):
-        return self.auth_private_key.sign(
-            message.encode('utf-8'),
-            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-            hashes.SHA256()
-        )
-
-    def verify_message(self, message, signature, peer_id):
-        if peer_id not in self.trusted_peers:
-            return False
-        try:
-            self.trusted_peers[peer_id].verify(
-                signature,
-                message.encode('utf-8'),
-                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                hashes.SHA256()
-            )
-            return True
-        except Exception:
-            return False
-
-    def broadcast_block(self, index, previous_hash, timestamp, data, signature):
+    async def broadcast_block(self, index, previous_hash, timestamp, data, signature):
         block = {
             "index": index,
             "previous_hash": previous_hash,
@@ -312,38 +376,33 @@ class PrivateBlockchain:
             "signature": signature
         }
         message = json.dumps({"type": "block", "block": block, "node_id": self.node_id})
-        signature = base64.b64encode(self.sign_message(message)).decode('utf-8')
+        signature = self.sign_message(message)
         payload = json.dumps({"message": message, "signature": signature}).encode('utf-8')
         
-        if self.node_id == "leader":
-            for peer in self.peers:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.connect((peer[0], peer[1]))
-                    sock.sendall(payload)
-                    sock.close()
-                except Exception as e:
-                    logging.error(f"Failed to broadcast to {peer}: {e}")
-        else:
+        for peer_id, peer_info in self.trusted_peers.items():
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((LEADER_IP, LEADER_PORT))
+                sock.connect((peer_info["ip"], peer_info["port"]))
                 sock.sendall(payload)
                 sock.close()
             except Exception as e:
-                logging.error(f"Failed to send to leader {LEADER_IP}:{LEADER_PORT}: {e}")
+                logging.error(f"Failed to broadcast to {peer_id} at {peer_info['ip']}:{peer_info['port']}: {e}")
 
-    def sync_from_leader(self):
+    async def sync_from_leader(self):
+        leader_info = self.trusted_peers.get("leader")
+        if not leader_info:
+            logging.error("Leader not found in trusted peers for sync")
+            return
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((LEADER_IP, LEADER_PORT))
+            sock.connect((leader_info["ip"], leader_info["port"]))
             message = json.dumps({"type": "sync_request", "node_id": self.node_id})
-            signature = base64.b64encode(self.sign_message(message)).decode('utf-8')
+            signature = self.sign_message(message)
             sock.sendall(json.dumps({"message": message, "signature": signature}).encode('utf-8'))
             data = sock.recv(4096)
             payload = json.loads(data.decode('utf-8'))
             message = json.loads(payload["message"])
-            if not self.verify_message(payload["message"], base64.b64decode(payload["signature"]), message["node_id"]):
+            if not self.verify_message(payload["message"], payload["signature"], message["node_id"]):
                 logging.error("Sync response signature verification failed")
                 return
             blocks = message["blocks"]
@@ -363,21 +422,17 @@ class PrivateBlockchain:
         except Exception as e:
             logging.error(f"Failed to sync from leader: {e}")
 
-    def start_networking(self):
-        self.peers = [("192.168.1.101", 5001), ("192.168.1.102", 5001)] if self.node_id == "leader" else []
-        threading.Thread(target=self.listen_for_blocks, daemon=True).start()
-
-    def listen_for_blocks(self):
+    async def listen_for_blocks(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('0.0.0.0', LOCAL_PORT))
+        server.bind(('0.0.0.0', 5001))
         server.listen(5)
-        logging.info(f"Node {self.node_id} listening on port {LOCAL_PORT}")
+        logging.info(f"Node {self.node_id} listening on port 5001")
         while True:
             client, addr = server.accept()
             data = client.recv(4096).decode('utf-8')
             payload = json.loads(data)
             message = json.loads(payload["message"])
-            if not self.verify_message(payload["message"], base64.b64decode(payload["signature"]), message["node_id"]):
+            if not self.verify_message(payload["message"], payload["signature"], message["node_id"]):
                 logging.error(f"Invalid signature from {addr}")
                 client.close()
                 continue
@@ -393,16 +448,15 @@ class PrivateBlockchain:
                     conn.commit()
                     conn.close()
                     self.apply_operation(json.loads(block['data']))
-                    if self.node_id == "leader":
-                        self.broadcast_block(block['index'], block['previous_hash'], block['timestamp'], 
-                                            json.loads(block['data']), block['signature'])
-            elif message["type"] == "sync_request" and self.node_id == "leader":
+                    await self.broadcast_block(block['index'], block['previous_hash'], block['timestamp'], 
+                                              json.loads(block['data']), block['signature'])
+            elif message["type"] == "sync_request":
                 conn = mysql.connector.connect(**DB_CONFIG)
                 c = conn.cursor(dictionary=True)
                 c.execute('SELECT * FROM blocks ORDER BY `index`')
                 blocks = c.fetchall()
                 response = json.dumps({"type": "sync_response", "blocks": blocks, "node_id": self.node_id})
-                signature = base64.b64encode(self.sign_message(response)).decode('utf-8')
+                signature = self.sign_message(response)
                 client.sendall(json.dumps({"message": response, "signature": signature}).encode('utf-8'))
                 conn.close()
             client.close()
@@ -433,7 +487,7 @@ def update_file_system(operation, path, data=None):
         if target in current and current[target]["type"] == "file":
             del current[target]
     elif operation == "delete_folder":
-        if target in current and current[target]["type"] == "directory" and not current[target]["contents"]:
+        if target in current and current[target]["type"] == "directory":
             del current[target]
     elif operation == "move" or operation == "copy":
         source_path = data["source"]
@@ -457,20 +511,56 @@ def update_file_system(operation, path, data=None):
     conn.commit()
     conn.close()
     
-    blockchain.broadcast_block(index, previous_block['signature'], timestamp, block_data, signature)
+    asyncio.run(blockchain.broadcast_block(index, previous_block['signature'], timestamp, block_data, signature))
+
+# Authentication helper
+def login_required(f):
+    def wrap(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    wrap.__name__ = f.__name__  # Preserve the original function name
+    return wrap
 
 # Routes
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        conn = mysql.connector.connect(**DB_CONFIG)
+        c = conn.cursor(dictionary=True)
+        c.execute('SELECT * FROM users WHERE username = %s', (username,))
+        user = c.fetchone()
+        conn.close()
+        
+        if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash']):
+            session['logged_in'] = True
+            session['username'] = username
+            return redirect(url_for('index'))
+        return render_template('login.html', error="Invalid credentials")
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    session.pop('username', None)
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     return render_template('index.html')
 
 @app.route('/api/files', methods=['GET'])
+@login_required
 def list_files():
     path = request.args.get('path', '')
     current, _ = get_path_dict(path)
     return jsonify(current)
 
 @app.route('/api/create_folder', methods=['POST'])
+@login_required
 def create_folder():
     path = request.json.get('path')
     if not path:
@@ -479,6 +569,7 @@ def create_folder():
     return jsonify({"success": True})
 
 @app.route('/api/upload', methods=['POST'])
+@login_required
 def upload_file():
     file = request.files.get('file')
     path = request.form.get('path')
@@ -490,6 +581,7 @@ def upload_file():
     return jsonify({"success": True})
 
 @app.route('/api/download', methods=['GET'])
+@login_required
 def download_file():
     path = request.args.get('path')
     current, target = get_path_dict(path)
@@ -503,6 +595,7 @@ def download_file():
     return jsonify({"error": "File not found"}), 404
 
 @app.route('/api/delete_file', methods=['POST'])
+@login_required
 def delete_file():
     path = request.json.get('path')
     if not path:
@@ -514,19 +607,19 @@ def delete_file():
     return jsonify({"error": "Not a file or does not exist"}), 404
 
 @app.route('/api/delete_folder', methods=['POST'])
+@login_required
 def delete_folder():
     path = request.json.get('path')
     if not path:
         return jsonify({"error": "Path required"}), 400
     current, target = get_path_dict(path)
     if target in current and current[target]["type"] == "directory":
-        if current[target]["contents"]:
-            return jsonify({"error": "Folder is not empty"}), 400
         update_file_system("delete_folder", path)
         return jsonify({"success": True})
     return jsonify({"error": "Not a folder or does not exist"}), 404
 
 @app.route('/api/move', methods=['POST'])
+@login_required
 def move_item():
     source = request.json.get('source')
     dest = request.json.get('dest')
@@ -536,6 +629,7 @@ def move_item():
     return jsonify({"success": True})
 
 @app.route('/api/copy', methods=['POST'])
+@login_required
 def copy_item():
     source = request.json.get('source')
     dest = request.json.get('dest')
@@ -544,8 +638,32 @@ def copy_item():
     update_file_system("copy", dest, {"source": source})
     return jsonify({"success": True})
 
-# HTML Template
-html_template = """
+# HTML Templates
+login_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RCS Login</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Ryan's Cool Storage - Login</h1>
+    <form method="post">
+        <label>Username: <input type="text" name="username" required></label><br><br>
+        <label>Password: <input type="password" name="password" required></label><br><br>
+        <input type="submit" value="Login">
+    </form>
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+</body>
+</html>
+"""
+
+index_template = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -558,6 +676,7 @@ html_template = """
 </head>
 <body>
     <div id="path">/</div>
+    <p>Logged in as: {{ session['username'] }} | <a href="{{ url_for('logout') }}">Logout</a></p>
     <input type="file" id="fileInput">
     <button onclick="uploadFile()">Upload</button>
     <button onclick="createFolder()">New Folder</button>
@@ -626,7 +745,7 @@ html_template = """
         }
 
         function deleteFolder(foldername) {
-            if (confirm('Are you sure you want to delete ' + foldername + '?')) {
+            if (confirm('Are you sure you want to delete ' + foldername + ' and all its contents?')) {
                 fetch('/api/delete_folder', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -649,7 +768,11 @@ html_template = """
 
 if __name__ == '__main__':
     os.makedirs('templates', exist_ok=True)
+    with open('templates/login.html', 'w') as f:
+        f.write(login_template)
     with open('templates/index.html', 'w') as f:
-        f.write(html_template)
+        f.write(index_template)
     
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, lambda: asyncio.run(blockchain.listen_for_blocks()))
     app.run(host='0.0.0.0', port=5000, debug=True)
