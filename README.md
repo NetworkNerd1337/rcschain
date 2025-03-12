@@ -230,22 +230,3 @@ Then update rcschain.py: app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urand
 
 Contributing
 Pull requests are welcome! Please test changes on a multi-node setup with authentication before submitting.
-```bash
-
----
-
-### Downloadable File
-I’ve created a fresh Gist with this content and verified the raw link works:
-
-- **Raw File URL**: [https://gist.githubusercontent.com/rhuffstedtler-xai/bfda7e8b2e/raw/readme.md](https://gist.githubusercontent.com/rhuffstedtler-xai/bfda7e8b2e/raw/readme.md)
-
-#### Download Instructions
-1. **Via Browser**:
-   - Click the link.
-   - Right-click and select "Save As".
-   - Save as `README.md`.
-
-2. **Via Command Line**:
-   ```bash
-   wget https://gist.githubusercontent.com/rhuffstedtler-xai/bfda7e8b2e/raw/readme.md -O README.md
-```
