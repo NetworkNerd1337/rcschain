@@ -112,8 +112,12 @@ python3 rcschain.py
 ```
 ### 2. Access the web interface:
 - Open http://192.168.1.100:5000 in a browser.
-- Log in with default credentials: ```admin:password```.
-- Use the UI to upload files, create folders, download files, delete files/folders recursively, etc.
+- Log in with default credentials: admin:password.
+- Use the UI to manage files/folders or users:
+	- Register: Click "Register" on the login page to create a new user.
+	- Manage Users: From the main UI, click "Manage Users" to list and delete users.
+	- Change Password: Click "Change Password" to update your password.
+	- File Operations: Upload files, create folders, delete files/folders recursively, etc.
 - Log out via the link in the UI.
 
 ## Multi-Node Setup
@@ -149,25 +153,30 @@ python3 rcschain.py
 - Upload a file, create a folder with subcontents, or delete a folder recursively.
 - Check other nodes (e.g., http://<node1-ip>:5000) after logging in to ensure actions sync.
 
-## Managing Users
-
+## User Management
 - Default User: admin:password is created on first run.
-- Add Users:
+- Register New Users:
+	- From the login page, click "Register".
+	- Enter a username, password (min 8 characters), and confirm password.
+	- Submit to create the account and return to login.
+- Delete Users:
+	- Log in, click "Manage Users" from the main UI.
+	- Select a user (except yourself) and click "Delete".
+- Change Password:
+	- Log in, click "Change Password".
+	- Enter current password, new password (min 8 characters), and confirm.
+	- Submit to update your password.
+- Manual Database Management (optional):
 ```bash
 mysql -u blockchain_user -p rcschain_db_<NODE_ID>
 ```
 ```sql
+-- Add user manually
 INSERT INTO users (username, password_hash)
 VALUES ('newuser', '$2b$12$...'); -- Replace with bcrypt hash
+-- Generate hash
+python3 -c "import bcrypt; print(bcrypt.hashpw('your_password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))"
 ```
-Generate a hash with Python:
-```bash
-import bcrypt
-password = "your_password".encode('utf-8')
-hashed = bcrypt.hashpw(password, bcrypt.gensalt())
-print(hashed.decode('utf-8'))
-```
-
 # Peer Exchange Mechanism
 - Dynamic Discovery: Nodes use a Kademlia DHT for peer discovery. The bootstrap node (e.g., leader) initializes the DHT network.
 - Encrypted DHT: Peer data (IP, port, Falcon public key) is encrypted with AES-GCM using a shared key, ensuring privacy.
@@ -221,9 +230,9 @@ Then update rcschain.py: app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urand
 # Future Enhancements
 - Implement dynamic key derivation for DHT encryption (e.g., via key exchange).
 - Add a full consensus algorithm (e.g., Raft) for decentralized operation.
-- Support user registration via the UI.
-- Refactoring into a distributed OO application rather than a single procedural file
+- Enhance user management with roles (e.g., admin vs. regular users).
 - Batch operations to further reduce signature overhead.
+- Refactoring into a distributed OO application rather than a single procedural file
 
 Contributing
 Pull requests are welcome! Please test changes on a multi-node setup with authentication before submitting.
