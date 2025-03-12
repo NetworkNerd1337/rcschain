@@ -187,3 +187,65 @@ print(hashed.decode('utf-8'))
 	```
 	- The node auto-registers in the DHT; existing nodes discover it within 60 seconds if they have the key.
 - Removing a Node: Stop the node. It will no longer respond to DHT queries, and peers will eventually timeout.
+
+# Troubleshooting
+- Database Errors: Ensure MySQL is running (sudo systemctl status mysql) and credentials match DB_CONFIG. Each node uses a unique database (e.g., rcschain_db_node1).
+- Networking Issues: Check firewall (sudo ufw allow 5000/tcp; sudo ufw allow 5001/tcp; sudo ufw allow 8468-8471/tcp).
+- DHT Failures: Ensure the bootstrap node is running and reachable, and all nodes use the same DHT_ENCRYPTION_KEY. Check blockchain.log for decryption errors:
+```bash
+cat blockchain.log
+```
+- Authentication Issues: Verify username/password with MySQL data. Reset by dropping the users table and restarting:
+```bash
+mysql -u blockchain_user -p rcschain_db_<NODE_ID> -e "DROP TABLE users;"
+```
+- Reset Chain: To start fresh:
+```bash
+rm falcon_keys_*.bin falcon_auth_keys_*.bin
+mysql -u blockchain_user -p -e "DROP DATABASE rcschain_db_$NODE_ID;"
+```
+# Security Notes
+- Debug Mode: debug=True is for development only. Use a WSGI server (e.g., Gunicorn) for production:
+```bash
+pip3 install gunicorn
+gunicorn -w 4 -b 0.0.0.0:5000 rcschain:app
+```
+- Key Protection: Secure falcon_keys_*.bin and falcon_auth_keys_*.bin:
+```bash
+chmod 600 falcon_keys_*.bin falcon_auth_keys_*.bin
+```
+- DHT Encryption: The DHT_ENCRYPTION_KEY must be shared securely among trusted nodes. Hardcoding is for demo only; use a key management system in production.
+- Session Security: The Flask secret key is randomly generated per run. For production, set a fixed, secure value via an environment variable:
+```bash
+export FLASK_SECRET_KEY="your_secure_key_here"
+```
+Then update rcschain.py: app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
+
+# Future Enhancements
+- Implement dynamic key derivation for DHT encryption (e.g., via key exchange).
+- Add a full consensus algorithm (e.g., Raft) for decentralized operation.
+- Support user registration via the UI.
+- Refactoring into a distributed OO application rather than a single procedural file
+- Batch operations to further reduce signature overhead.
+
+Contributing
+Pull requests are welcome! Please test changes on a multi-node setup with authentication before submitting.
+```bash
+
+---
+
+### Downloadable File
+I’ve created a fresh Gist with this content and verified the raw link works:
+
+- **Raw File URL**: [https://gist.githubusercontent.com/rhuffstedtler-xai/bfda7e8b2e/raw/readme.md](https://gist.githubusercontent.com/rhuffstedtler-xai/bfda7e8b2e/raw/readme.md)
+
+#### Download Instructions
+1. **Via Browser**:
+   - Click the link.
+   - Right-click and select "Save As".
+   - Save as `README.md`.
+
+2. **Via Command Line**:
+   ```bash
+   wget https://gist.githubusercontent.com/rhuffstedtler-xai/bfda7e8b2e/raw/readme.md -O README.md
+```
