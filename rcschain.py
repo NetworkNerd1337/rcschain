@@ -306,7 +306,7 @@ class PrivateBlockchain:
     def create_genesis_block(self):
         genesis_data = {"root": {"type": "directory", "contents": {}}}
         timestamp = datetime.now().isoformat()
-        signature = self.sign_block(0, "0", timestamp, genesis_data)
+        signature = self.sign_block(iano, "0", timestamp, genesis_data)
         
         conn = mysql.connector.connect(**DB_CONFIG)
         c = conn.cursor()
@@ -519,7 +519,7 @@ def login_required(f):
         if 'logged_in' not in session:
             return redirect(url_for('login'))
         return f(*args, **kwargs)
-    wrap.__name__ = f.__name__  # Preserve the original function name
+    wrap.__name__ = f.__name__
     return wrap
 
 # Routes
@@ -540,6 +540,101 @@ def login():
             return redirect(url_for('index'))
         return render_template('login.html', error="Invalid credentials")
     return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        confirm_password = request.form['confirm_password']
+        
+        if not username or not password or not confirm_password:
+            return render_template('register.html', error="All fields are required")
+        if password != confirm_password:
+            return render_template('register.html', error="Passwords do not match")
+        if len(password) < 8:
+            return render_template('register.html', error="Password must be at least 8 characters")
+        
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        conn = mysql.connector.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        try:
+            c.execute('INSERT INTO users (username, password_hash) VALUES (%s, %s)',
+                     (username, password_hash))
+            conn.commit()
+            conn.close()
+            return redirect(url_for('login'))
+        except mysql.connector.IntegrityError:
+            conn.close()
+            return render_template('register.html', error="Username already exists")
+        
+    return render_template('register.html')
+
+@app.route('/users', methods=['GET'])
+@login_required
+def manage_users():
+    conn = mysql.connector.connect(**DB_CONFIG)
+    c = conn.cursor(dictionary=True)
+    c.execute('SELECT id, username FROM users')
+    users = c.fetchall()
+    conn.close()
+    return render_template('users.html', users=users)
+
+@app.route('/delete_user', methods=['POST'])
+@login_required
+def delete_user():
+    user_id = request.form.get('user_id')
+    if not user_id:
+        return redirect(url_for('manage_users'))
+    
+    # Prevent deletion of the current user
+    conn = mysql.connector.connect(**DB_CONFIG)
+    c = conn.cursor(dictionary=True)
+    c.execute('SELECT id FROM users WHERE username = %s', (session['username'],))
+    current_user = c.fetchone()
+    
+    if str(current_user['id']) == user_id:
+        conn.close()
+        return redirect(url_for('manage_users', error="Cannot delete your own account"))
+    
+    c.execute('DELETE FROM users WHERE id = %s', (user_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('manage_users'))
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current_password = request.form['current_password']
+        new_password = request.form['new_password']
+        confirm_password = request.form['confirm_password']
+        
+        if not current_password or not new_password or not confirm_password:
+            return render_template('change_password.html', error="All fields are required")
+        if new_password != confirm_password:
+            return render_template('change_password.html', error="New passwords do not match")
+        if len(new_password) < 8:
+            return render_template('change_password.html', error="New password must be at least 8 characters")
+        
+        conn = mysql.connector.connect(**DB_CONFIG)
+        c = conn.cursor(dictionary=True)
+        c.execute('SELECT password_hash FROM users WHERE username = %s', (session['username'],))
+        user = c.fetchone()
+        
+        if not bcrypt.checkpw(current_password.encode('utf-8'), user['password_hash']):
+            conn.close()
+            return render_template('change_password.html', error="Current password is incorrect")
+        
+        new_password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        c.execute('UPDATE users SET password_hash = %s WHERE username = %s',
+                 (new_password_hash, session['username']))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('index'))
+    
+    return render_template('change_password.html')
 
 @app.route('/logout')
 def logout():
@@ -656,6 +751,97 @@ login_template = """
         <label>Password: <input type="password" name="password" required></label><br><br>
         <input type="submit" value="Login">
     </form>
+    <p><a href="{{ url_for('register') }}">Register</a></p>
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+</body>
+</html>
+"""
+
+register_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RCS Register</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Ryan's Cool Storage - Register</h1>
+    <form method="post">
+        <label>Username: <input type="text" name="username" required></label><br><br>
+        <label>Password: <input type="password" name="password" required></label><br><br>
+        <label>Confirm Password: <input type="password" name="confirm_password" required></label><br><br>
+        <input type="submit" value="Register">
+    </form>
+    <p><a href="{{ url_for('login') }}">Back to Login</a></p>
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+</body>
+</html>
+"""
+
+users_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RCS User Management</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { width: 50%; margin: 20px auto; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .error { color: red; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>User Management</h1>
+    <p><a href="{{ url_for('index') }}">Back to File System</a></p>
+    <table>
+        <tr><th>ID</th><th>Username</th><th>Action</th></tr>
+        {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td>{{ user.username }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('delete_user') }}" style="display:inline;">
+                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                        <input type="submit" value="Delete" onclick="return confirm('Are you sure you want to delete {{ user.username }}?');">
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+    </table>
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+</body>
+</html>
+"""
+
+change_password_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RCS Change Password</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Ryan's Cool Storage - Change Password</h1>
+    <form method="post">
+        <label>Current Password: <input type="password" name="current_password" required></label><br><br>
+        <label>New Password: <input type="password" name="new_password" required></label><br><br>
+        <label>Confirm New Password: <input type="password" name="confirm_password" required></label><br><br>
+        <input type="submit" value="Change Password">
+    </form>
+    <p><a href="{{ url_for('index') }}">Back to File System</a></p>
     {% if error %}
         <p class="error">{{ error }}</p>
     {% endif %}
@@ -676,7 +862,10 @@ index_template = """
 </head>
 <body>
     <div id="path">/</div>
-    <p>Logged in as: {{ session['username'] }} | <a href="{{ url_for('logout') }}">Logout</a></p>
+    <p>Logged in as: {{ session['username'] }} | 
+       <a href="{{ url_for('users') }}">Manage Users</a> | 
+       <a href="{{ url_for('change_password') }}">Change Password</a> | 
+       <a href="{{ url_for('logout') }}">Logout</a></p>
     <input type="file" id="fileInput">
     <button onclick="uploadFile()">Upload</button>
     <button onclick="createFolder()">New Folder</button>
@@ -770,6 +959,12 @@ if __name__ == '__main__':
     os.makedirs('templates', exist_ok=True)
     with open('templates/login.html', 'w') as f:
         f.write(login_template)
+    with open('templates/register.html', 'w') as f:
+        f.write(register_template)
+    with open('templates/users.html', 'w') as f:
+        f.write(users_template)
+    with open('templates/change_password.html', 'w') as f:
+        f.write(change_password_template)
     with open('templates/index.html', 'w') as f:
         f.write(index_template)
     
